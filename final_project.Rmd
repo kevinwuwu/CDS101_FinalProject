@@ -1,0 +1,301 @@
+---
+title: "Final Project"
+author: "Kevin Wu"
+date: "`r Sys.Date()`"
+documentclass: article
+geometry: margin=1in
+fontsize: 11pt
+output:
+  pdf_document:
+    toc: false
+    df_print: kable
+    fig_caption: false
+    number_sections: false
+    dev: pdf
+    highlight: tango
+  html_document:
+    theme: default
+    self_contained: true
+    toc: false
+    df_print: kable
+    fig_caption: false
+    number_sections: false
+    smart: true
+    dev: svg
+---
+
+```{r setup, include = FALSE}
+# DO NOT ALTER THIS CHUNK
+# Set knitr options
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  fig.width = 5,
+  fig.asp = 0.618,
+  out.width = "70%",
+  dpi = 120,
+  fig.align = "center",
+  cache = FALSE
+)
+# Load required packages
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(infer))
+suppressPackageStartupMessages(library(modelr))
+suppressPackageStartupMessages(library(broom))
+# Load dataset
+college <- read_rds("college.rds") %>%
+  type_convert(
+    na=combine("", "NA", "PrivacySuppressed")
+  )
+# Set seed
+set.seed(98261936)
+```
+
+## Question of Interest
+```{r}
+college_first6rows <- head(college)
+```
+This project is trying to find what affect the graduation rate (Column: C200_4, which is a continuous variable). Graduation rate is one of the key considerations for a student selecting a college. This project will focus on the student body (Columns: UGDS_WHITE to UGDS_HISPOLD which are continuous variables), School's admission rate (Column: ADM_RATE, which is a continuous variable), SAT average (column: SAT_AVG, which is a continuous variable), and cost (column: COSTT4_A, which is a continuous variable). This project will use modeling.
+
+  
+## Preprocessing
+```{r}
+college_reduced<-college%>%
+  select(ADM_RATE, UGDS, UGDS_WHITE : UGDS_HISPOLD, SAT_AVG, COSTT4_A, C200_4)
+```
+This code chunk is selecting the variables that are needed for this project.
+
+  
+```{r}
+college_renamed<-college_reduced%>%
+  rename(
+    admission_rate.overall = 'ADM_RATE',
+    demographics.race_ethnicity.white = 'UGDS_WHITE',
+    demographics.race_ethnicity.black = 'UGDS_BLACK',
+    demographics.race_ethnicity.hispanic='UGDS_HISP',
+    demographics.race_ethnicity.asian='UGDS_ASIAN', 
+    demographics.race_ethnicity.aian='UGDS_AIAN', 
+    demographics.race_ethnicity.nhpi='UGDS_NHPI',
+    demographics.race_ethnicity.two_or_more='UGDS_2MOR',
+    demographics.race_ethnicity.unknown='UGDS_UNKN',
+    demographics.race_ethnicity.non_resident_alien='UGDS_NRA',
+    demographics.race_ethnicity.white_non_hispanic='UGDS_WHITENH',
+    demographics.race_ethnicity.black_non_hispanic='UGDS_BLACKNH',
+    demographics.race_ethnicity.asian_pacific_islander='UGDS_API',
+    demographics.race_ethnicity.aian_prior_2009='UGDS_AIANOLD',
+    demographics.race_ethnicity.hispanic_prior_2009='UGDS_HISPOLD',
+    sat_scores.average.overall='SAT_AVG',
+    attendance.academic_year='COSTT4_A',
+    completion_rate_4yr_200nt='C200_4'
+   )
+```
+This code chunk is renaming all the variables for better understanding.
+  
+## Visualization
+I would like to find the relationship between percentage of student race and graduation rate. I chose to use the scatterplot to see the trend of each race and the graduation rate. I use the facet_wrap graph to display all the four races side by side.
+```{r}
+gather(college_renamed, key="original_column", value="value", 
+       demographics.race_ethnicity.black, 
+       demographics.race_ethnicity.asian,
+       demographics.race_ethnicity.white,
+       demographics.race_ethnicity.hispanic) %>%
+ggplot()+
+  geom_point(aes(x= value, y = completion_rate_4yr_200nt))+
+  facet_wrap(~original_column, scales = "free_x") +
+  labs(title="Distribution of Race and The Graduation Rate",
+       x = "Percentage")
+```
+We can see differences between the four graphs. For example, Asian tends to cluster in the upper left corner, Black tends to cluster in the mid-left, Hispanic is similar to Black, but a little bit to the the lower left, White tends to cluster in the mid-right. However, we can not confirm the relationship using the percentage of race because the graduation rate should be from the majority of students not the low-percentage race population. 
+
+To find the relationship between race and graduation rate, we can categrorize the colleges according to the majority of their race type. We can use the Bar Graph to see how many colleges for each type.
+
+
+```{r}
+race<-mutate(college_renamed, college_race_type= 
+        if_else(demographics.race_ethnicity.black>0.5, "Black", 
+  if_else(demographics.race_ethnicity.white>0.5,"White",
+if_else(demographics.race_ethnicity.hispanic>0.5,"Hispanic","Other"))))
+```
+```{r}
+ggplot(data = race)+
+  geom_bar(aes(x = college_race_type), fill = "Orange", bins = 30)+
+  labs(title = "Comparison of Different Race Type Colleges")
+```
+We used a bar graph to show the Different Race Types in Colleges. The college with the majority population that is white has the greatest amount. The college with the majority population that is black and hispanics has the similiar amount of about 500-600. There are some colleges that do not have data which shows in the NA column. 
+
+Then we can use the boxplot to see whether there are any differences among the college race type for the Admission rate, SAT score, Cost, and Graduation Rate.
+```{r}
+ggplot(data = race)+
+  geom_boxplot(aes(x=college_race_type, y = admission_rate.overall))+
+  labs(title = "Comparison of Race and Admission Rate")
+```
+All the college_race_type have the similiar median Admission Rate of 0.6-0.75. Black and Other have larger IQRs. White has the smallest IQR, but has the most outliers.
+  
+```{r}
+ggplot(data = race)+
+  geom_boxplot(aes(x=college_race_type, y = sat_scores.average.overall))+
+  labs(title = "Comparison of Race and SAT score")
+```
+The college with the majority student body that is black has the lowest median SAT score with some outliers on both ends. The college with majority students that is white has the highest median SAT score with many outliers on the upper end. The college with other race type has the largest range with one outlier.
+  
+```{r}
+ggplot(data = race)+
+  geom_boxplot(aes(x=college_race_type, y = attendance.academic_year))+
+  labs(title = "Comparison of Race and Cost")
+```
+
+The college with the majority student body that is Hispanic has the lowest median cost and the most outliers on the upper end. While the other three types have the similiar median cost. The college with majority students that is white has the highest IQR and no outliers.
+
+  
+```{r}
+ggplot(data = race)+
+  geom_boxplot(aes(x=college_race_type, y = completion_rate_4yr_200nt))+
+  labs(title = "Comparison of Race and Graduation Rate")
+```
+
+The college with majority students that is white has the highest median Graduation Rate, which is above 50% with one outlier on the lower end. The college with majority students that is black has the lowest median Graduation Rate, which is about 27% with some outliers on the upper end. The college with other race type has the largest IQR.
+    
+To compare the overall admission rate, SAT score, and Cost to graduation rate we use scatterplots because all of the variables are continuous.
+```{r}
+ggplot(data = college_renamed)+
+  geom_point(aes(x = admission_rate.overall, y= completion_rate_4yr_200nt))+
+  labs(
+      title = "Distribution of Rate of Graduation in 4 Years Compared to Admission Rates", 
+      x = "Admission Rate", 
+      y = "Rate of Graduation in 4 Years")
+```
+The graph is moderate with a negative trend.
+  
+```{r}
+ggplot(data = college_renamed)+
+  geom_point(aes(x = attendance.academic_year, y= completion_rate_4yr_200nt))+
+  labs(
+      title = "Distribution of Graduation in 4 Years Compared to Cost", 
+      x = "Cost", 
+      y = "Rate of Graduation in 4 Years")+
+geom_abline(slope = 1, intercept = 0)
+```
+This graph is a positive trend and moderately strong.
+
+  
+```{r}
+ggplot(data = college_renamed)+
+  geom_point(aes(x = sat_scores.average.overall, y= completion_rate_4yr_200nt))+
+  labs(
+      title = "Distribution of SAT scores to Graduation Rate", 
+      x = "SAT Score", 
+      y = "Rate of Graduation in 4 Years")+
+geom_abline(slope = 1, intercept = 0)
+```
+The graph is strong with a positive trend.
+
+  
+## Summary Statistics
+```{r}
+group_by(race,college_race_type)%>%
+  summarize(
+    n()
+  )
+```
+This code chunk is showing how many colleges for each race type.
+  
+```{r}
+college_renamed%>%
+summarize(
+    n(),
+    mean    = mean(admission_rate.overall, na.rm = TRUE),
+    median  = median(admission_rate.overall, na.rm = TRUE),
+    min = min(admission_rate.overall, na.rm = TRUE),
+    max = max (admission_rate.overall, na.rm = TRUE),
+    IQR = IQR(admission_rate.overall, na.rm = TRUE)
+    )
+```
+This table shows the summary statistics for the admission rate.
+```{r}
+college_renamed%>%
+summarize(
+    n(),
+    mean    = mean(attendance.academic_year, na.rm = TRUE),
+    median  = median(attendance.academic_year, na.rm = TRUE),
+    min = min(attendance.academic_year, na.rm = TRUE),
+    max = max (attendance.academic_year, na.rm = TRUE),
+    IQR = IQR(attendance.academic_year, na.rm = TRUE)
+    )
+```
+This table shows the summary statistics for the cost.
+```{r}
+college_renamed%>%
+summarize(
+    n(),
+    mean    = mean(sat_scores.average.overall, na.rm = TRUE),
+    median  = median(sat_scores.average.overall, na.rm = TRUE),
+    min = min(sat_scores.average.overall, na.rm = TRUE),
+    max = max (sat_scores.average.overall, na.rm = TRUE),
+    IQR = IQR(sat_scores.average.overall, na.rm = TRUE)
+    )
+```
+This table shows the summary statistic for the SAT score.
+```{r}
+group_by(race,college_race_type)%>%
+  summarize(
+    n(),
+    mean    = mean(completion_rate_4yr_200nt, na.rm = TRUE),
+    median  = median(completion_rate_4yr_200nt, na.rm = TRUE),
+    min = min(completion_rate_4yr_200nt, na.rm = TRUE),
+    max = max (completion_rate_4yr_200nt, na.rm = TRUE),
+    IQR = IQR(completion_rate_4yr_200nt, na.rm = TRUE)
+  )
+```
+This table shows the summary statistic for the graduation rate of each race.
+
+  
+## Data Analysis
+```{r}
+mixed_model<-lm(data = race, 
+            completion_rate_4yr_200nt ~ admission_rate.overall 
+              + sat_scores.average.overall 
+              + attendance.academic_year 
+              + college_race_type
+            )
+mixed_model%>%
+  tidy()
+
+mixed_model %>%
+  glance()%>% select(1:5)
+```
+The mixed model takes into the factors of admission rate, cost, SAT score, and college race type. The linear model has a intercept of -0.674825, a standard error of 0.034221, a statistic of -19.7195686, and a p-value of 0. The r^2 of this model is 0.6730724, which mean the model is fine in accuracy.'
+
+```{r}
+mixed_df<- race%>%
+add_predictions(mixed_model) %>%
+add_residuals(mixed_model)
+
+mixed_df %>%
+ggplot() +
+geom_point(mapping = aes(x = pred, y = completion_rate_4yr_200nt)) +
+geom_abline(slope = 1, intercept = 0) +
+  labs(title = "Comparison of Predicted and Observed Graduation Rate")+ 
+  xlab("Predicted Graduation Rate")
+  
+mixed_df %>%
+ggplot() +
+geom_point(mapping = aes(x = pred, y = resid) ) +
+geom_abline(slope = 0, intercept = 0) +
+labs(title = "Comparison of Prediction and Residual")+ xlab("Prediction")
+
+mixed_df %>%
+ggplot() +
+geom_qq(aes(sample = resid)) +
+geom_qq_line(aes(sample = resid))
+```
+The mixed model does not violate any linear test assumptions. There are positive linear relationships between predicted and actual graduation rate, and the reference line does fit this model very well because majority of the plots are on the line, which means the actual graduation rate is similar to the predicted graduation rate. The constant varibility in the residual does match this graph because there are equal amount of points above and below the line. The QQ plot is relatively linear compared to the sample linear plot. 
+
+  
+## Conclusion
+
+The question of interest for this project is which variables affect the graduation rate. From the analysis we can conclude that admission rate, cost, SAT score, and race affect graduation rate. The admission rate has a negative correlation with graduation rate, i.e. the higher admission rate for the college the lower the graduation rate would be. Cost has has a slightly positive relationship with graduation rate, which is surprising because most people believe that the high college cost makes students stop their college study. SAT score has a positve trend on graduation rate, the higher the SAT score the college accepts the higher the graduation rate the college has. The college with majority black students have the lowest graduation rate, this is probably resulted by the low SAT score such college accept, because such colleges have the similiar cost as other colleges, and admission rate is slightly lower than the other schools. 
+
+Because graduation rate is one of the key consideration for students in selecting a college, from the variables in this project, it seems if colleges want to increase the graduation rate, they should decrease the admission rate and increase the SAT score and cost. However in the real world graduation rate is affected by many other factors than this project's model, which need further study.
+
+
+
